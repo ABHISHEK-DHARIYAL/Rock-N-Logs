@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/*
+ * Design Tokens — "Rock n Logs" visual identity
+ *
+ * A deliberate departure from the generic AI-restaurant-site look
+ * (cream + terracotta, or black + neon). This palette pulls from cast
+ * iron, aged brass, and dried herbs — the material world of a
+ * neighborhood bistro kitchen rather than a food-delivery app.
+ */
+:root {
+  --color-ink: #21261f;        /* near-black forest, primary text & dark sections */
+  --color-parchment: #f4efe2;  /* warm paper background */
+  --color-parchment-dim: #ece4d1;
+  --color-brass: #b8873b;      /* signature accent — used sparingly */
+  --color-brass-light: #d4ab63;
+  --color-moss: #4b5d45;       /* secondary green, links/hover */
+  --color-rust: #8b4a3c;       /* status/alert accent, used rarely */
+  --color-line: #d9cfb6;       /* hairline dividers on parchment */
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-parchment: var(--color-parchment);
+  --color-parchment-dim: var(--color-parchment-dim);
+  --color-brass: var(--color-brass);
+  --color-brass-light: var(--color-brass-light);
+  --color-moss: var(--color-moss);
+  --color-rust: var(--color-rust);
+  --color-line: var(--color-line);
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-work-sans);
+}
+
+body {
+  background: var(--color-parchment);
+  color: var(--color-ink);
+}
+
+/* Signature divider: a slim brass rule with a centered diamond mark,
+   used once per page section — not repeated to the point of decoration. */
+.divider-brass {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-brass);
+}
+.divider-brass::before,
+.divider-brass::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--color-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

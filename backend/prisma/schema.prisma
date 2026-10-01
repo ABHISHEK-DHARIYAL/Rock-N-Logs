@@ -1,0 +1,244 @@
+// ============================================================================
+// Prisma Schema — Restaurant Platform
+//
+// This file is the single source of truth for the relational data model.
+// Business rules that are enforced here (not in application code):
+//   - A MenuItem always belongs to exactly one MenuCategory (RESTRICT on
+//     delete: categories cannot be removed while items still reference them,
+//     forcing an explicit re-categorization decision instead of silent data
+//     loss).
+//   - Image assets are modeled as their own table (Image) rather than plain
+//     URL strings, because we need to keep the Cloudinary public_id around
+//     to be able to delete/replace the remote asset later.
+//   - Booking is intentionally "dumb": it stores a requested date/time and
+//     party size with no concept of table inventory. Availability logic is
+//     NOT modeled here by design (see BookingService).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Admin / Auth
+// ---------------------------------------------------------------------------
+
+/// A staff account able to sign in to /admin. Passwords are always stored
+/// as bcrypt hashes — never plaintext (see AuthService).
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+// ---------------------------------------------------------------------------
+// Menu
+// ---------------------------------------------------------------------------
+
+/// A grouping of menu items (e.g. "Starters", "Desserts"). Controls display
+/// order via `sortOrder` rather than relying on insertion order.
+model MenuCategory {
+  id        String     @id @default(cuid())
+  name      String
+  sortOrder Int        @default(0)
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("menu_categories")
+}
+
+/// A single dish/drink offered on the menu. `isAvailable` lets the admin
+/// hide an item (e.g. out of stock) without deleting its history.
+model MenuItem {
+  id           String       @id @default(cuid())
+  name         String
+  description  String
+  price        Decimal      @db.Decimal(10, 2)
+  isAvailable  Boolean      @default(true)
+  isFeatured   Boolean      @default(false)
+  sortOrder    Int          @default(0)
+
+  category     MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId   String
+
+  image        Image?       @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  imageId      String?      @unique
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+// ---------------------------------------------------------------------------
+// Bookings
+// ---------------------------------------------------------------------------
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+/// A table reservation request submitted from the public site.
+///
+/// Business rule: this system intentionally does NOT model table inventory
+/// or automatic availability checks. Every booking is created as PENDING
+/// and a human confirms it from /admin/bookings. Keep it that way — see
+/// architecture notes in BookingService.
+model Booking {
+  id             String        @id @default(cuid())
+  customerName   String
+  customerPhone  String
+  customerEmail  String?
+  partySize      Int
+  requestedDate  DateTime
+  status         BookingStatus @default(PENDING)
+  specialRequest String?
+
+  preOrderItems  BookingPreOrderItem[]
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([requestedDate])
+  @@index([status])
+  @@map("bookings")
+}
+
+/// A menu item a customer pre-ordered as part of their booking. Stored as
+/// its own join table (rather than a free-text field) so quantities and
+/// per-item pricing at time of order are preserved even if the menu item's
+/// price later changes.
+model BookingPreOrderItem {
+  id            String   @id @default(cuid())
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     String
+  menuItemName  String
+  quantity      Int      @default(1)
+  priceAtOrder  Decimal  @db.Decimal(10, 2)
+
+  @@index([bookingId])
+  @@map("booking_pre_order_items")
+}
+
+// ---------------------------------------------------------------------------
+// Promotions
+// ---------------------------------------------------------------------------
+
+/// A time-bound marketing banner/offer shown on the public site.
+model Promotion {
+  id          String    @id @default(cuid())
+  title       String
+  description String
+  isActive    Boolean   @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+
+  image       Image?    @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  imageId     String?   @unique
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("promotions")
+}
+
+// ---------------------------------------------------------------------------
+// Gallery
+// ---------------------------------------------------------------------------
+
+/// A photo shown in the public gallery, distinct from images attached to
+/// menu items or promotions so the gallery can be curated independently.
+model GalleryPhoto {
+  id        String   @id @default(cuid())
+  caption   String?
+  sortOrder Int      @default(0)
+
+  image     Image    @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  imageId   String   @unique
+
+  createdAt DateTime @default(now())
+
+  @@map("gallery_photos")
+}
+
+// ---------------------------------------------------------------------------
+// Images (shared across menu items, promotions, gallery)
+// ---------------------------------------------------------------------------
+
+/// Represents a single uploaded image asset. `providerId` is the
+/// storage-provider-specific identifier (e.g. Cloudinary public_id) needed
+/// to delete or transform the remote asset later — see ImageStorage.
+model Image {
+  id         String   @id @default(cuid())
+  url        String
+  providerId String
+  altText    String?
+  width      Int?
+  height     Int?
+
+  menuItem      MenuItem?
+  promotion     Promotion?
+  galleryPhoto  GalleryPhoto?
+
+  createdAt  DateTime @default(now())
+
+  @@map("images")
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant settings (singleton row)
+// ---------------------------------------------------------------------------
+
+/// Site-wide restaurant details editable from /admin/settings. Modeled as
+/// a single row (id is always "singleton") rather than free-floating env
+/// vars, so non-technical staff can update them from the UI.
+model RestaurantSettings {
+  id            String   @id @default("singleton")
+  name          String   @default("Our Restaurant")
+  tagline       String?
+  description   String?
+  address       String?
+  phone         String?
+  whatsappPhone String?
+  email         String?
+  openingHours  String?
+  updatedAt     DateTime @updatedAt
+
+  @@map("restaurant_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Menu PDF
+// ---------------------------------------------------------------------------
+
+/// The downloadable/viewable PDF version of the menu shown on the public
+/// site alongside the structured digital menu. Modeled as a singleton row
+/// (like RestaurantSettings) since there is only ever one current PDF
+/// menu — uploading a new one replaces it (see MenuDocumentService).
+/// All fields are nullable because no PDF has been uploaded yet in a
+/// freshly seeded database.
+model MenuDocument {
+  id               String   @id @default("singleton")
+  url              String?
+  providerId       String?
+  originalFilename String?
+  fileSizeBytes    Int?
+  updatedAt        DateTime @updatedAt
+
+  @@map("menu_document")
+}
