@@ -1,0 +1,24 @@
+# Render Blueprint — optional. Or create the Web Service by hand with the same values.
+services:
+  - type: web
+    name: rock-n-logs-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    # db push lives in the BUILD step because pre-deploy commands need a paid plan.
+    buildCommand: npm install && npm run build && npx prisma db push
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: ADMIN_SEED_EMAIL
+        sync: false
+      - key: ADMIN_SEED_PASSWORD
+        sync: false
